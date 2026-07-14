@@ -1,9 +1,8 @@
 <?php
-$host = 'localhost';
-$dbname = 'openvpn';
-$user = 'openvpn_db';
-$pass = 'TUCLAVEAQUI';
-
+$db_host = 'localhost';
+$db_name = 'openvpn';
+$db_user = 'openvpn_db';
+$db_pass = 'AlternativaGratiasAR';
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $user, $pass);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
