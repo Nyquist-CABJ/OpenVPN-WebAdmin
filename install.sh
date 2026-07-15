@@ -23,7 +23,7 @@ mysql -e "CREATE DATABASE IF NOT EXISTS openvpn;"
 mysql openvpn < database/schema.sql
 
 # Creamos el usuario openvpn_db y asignamos los privilegios
-mysql -e "CREATE USER IF NOT EXISTS 'openvpn_db'@'localhost' IDENTIFIED BY 'AlternativaGratiasAR';"
+mysql -e "CREATE USER IF NOT EXISTS 'openvpn_db'@'localhost' IDENTIFIED BY 'AlternativaGratisAR';"
 mysql -e "GRANT ALL PRIVILEGES ON openvpn.* TO 'openvpn_db'@'localhost';"
 mysql -e "FLUSH PRIVILEGES;"
 echo "Base de datos y usuario openvpn_db configurados con éxito."
