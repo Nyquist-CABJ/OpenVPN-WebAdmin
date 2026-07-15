@@ -1,4 +1,4 @@
-# VPN Manager for SD Mates & DF Techno
+# VPN Manager for OpenVPN
 
 Panel de administración web para gestionar conexiones OpenVPN, asignación de IPs estáticas, control de horarios y seguridad (Kill Switch) para redes corporativas.
 
