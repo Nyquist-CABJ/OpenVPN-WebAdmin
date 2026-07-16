@@ -100,7 +100,7 @@ mysql -u "openvpn_db" -p"AlternativaGratisAR" "openvpn" -e "$SQL_QUERY"
 
 echo "==========================================="
 echo "¡Instalación completada con éxito usando NGINX!"
-echo "Accede al panel desde: http://$(curl -s https://api.ipify.org || hostname -I | awk '{print $1}')/"
+echo "Accede al panel desde: http://$(hostname -I | awk '{print $1}')/"
 echo "Usuario por defecto: admin"
 echo "Clave: Admin123"
 echo "==========================================="
