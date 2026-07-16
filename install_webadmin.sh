@@ -11,7 +11,7 @@ echo "Iniciando instalación del panel VPN con Nginx..."
 # 1. Instalar dependencias del sistema
 echo "[1/7] Instalando dependencias (Nginx, PHP-FPM, MariaDB, OpenVPN, Easy-RSA)..."
 apt-get update
-apt-get install -y nginx php-fpm php-mysql php-gd mariadb-server openvpn easy-rsa unzip git
+apt-get install -y nginx php-fpm php-mysql php-gd mariadb-server unzip
 
 # 2. Configurar Base de Datos
 echo "[2/7] Configurando Base de Datos y Usuarios..."
