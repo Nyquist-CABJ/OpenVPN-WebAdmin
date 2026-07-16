@@ -120,7 +120,7 @@ list_users() {
 }
 
 show_ips() {
-    grep ifconfig-push $CCD_DIR/* 2>/dev/null | awk -F'/' '{print $NF}' | sed 's/:ifconfig-push/ /g'
+    grep -H ifconfig-push $CCD_DIR/* 2>/dev/null | awk -F'/' '{print $NF}' | sed 's/:ifconfig-push/ /g'
 }
 
 set_static_ip() {
