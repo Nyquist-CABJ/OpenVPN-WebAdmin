@@ -47,8 +47,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
+// Obtener todos los usuarios e IPs
 $activeUsers = $vpn->listUsers();
 $userIPs = $vpn->listIPs();
+
+// --- LÓGICA DE BÚSQUEDA ---
+$searchQuery = $_GET['search'] ?? '';
+if (!empty($searchQuery)) {
+    $activeUsers = array_filter($activeUsers, function($user) use ($searchQuery) {
+        return stripos($user, $searchQuery) !== false;
+    });
+}
+
+// --- LÓGICA DE PAGINACIÓN ---
+$limit = 10;
+$totalUsers = count($activeUsers);
+$totalPages = $totalUsers > 0 ? ceil($totalUsers / $limit) : 1;
+$page = isset($_GET['page']) && is_numeric($_GET['page']) ? (int)$_GET['page'] : 1;
+$page = max(1, min($page, $totalPages)); // Asegura que no sobrepase los límites
+$offset = ($page - 1) * $limit;
+
+// Extraer solo los usuarios de la página actual
+$paginatedUsers = array_slice($activeUsers, $offset, $limit);
 
 // Obtener configuración de acceso para indicadores
 $settingsQuery = $pdo->query("SELECT * FROM vpn_user_settings")->fetchAll(PDO::FETCH_ASSOC);
@@ -64,25 +84,43 @@ include __DIR__ . '/../templates/header.php';
 
 <div class="row">
     <?php if ($isAdmin): ?>
-    <div class="col-md-4 mb-4">
+    <!-- PANEL HORIZONTAL SUPERIOR -->
+    <div class="col-12 mb-4">
         <div class="card shadow-sm border-primary">
             <div class="card-header bg-primary text-white"><i class="bi bi-shield-plus"></i> Generar Certificado</div>
             <div class="card-body">
-                <form method="POST">
+                <form method="POST" class="row gx-3 gy-2 align-items-center">
                     <input type="hidden" name="action" value="create">
-                    <div class="mb-3">
+                    <div class="col-sm-9">
                         <input type="text" class="form-control" name="username" pattern="[a-zA-Z0-9_-]+" required placeholder="Nombre de usuario (Sin espacios)">
                     </div>
-                    <button type="submit" class="btn btn-success w-100"><i class="bi bi-plus-circle"></i> Crear Perfil</button>
+                    <div class="col-sm-3">
+                        <button type="submit" class="btn btn-success w-100"><i class="bi bi-plus-circle"></i> Crear Perfil</button>
+                    </div>
                 </form>
             </div>
         </div>
     </div>
     <?php endif; ?>
     
-    <div class="col-md-<?= $isAdmin ? '8' : '12' ?>">
+    <!-- LISTA DE PERFILES INFERIOR -->
+    <div class="col-12">
         <div class="card shadow-sm">
-            <div class="card-header bg-dark text-white"><i class="bi bi-file-earmark-lock"></i> Perfiles (<?= count($activeUsers) ?>)</div>
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-file-earmark-lock"></i> Perfiles (<?= $totalUsers ?>)</span>
+                
+                <!-- Buscador -->
+                <form method="GET" class="m-0 d-flex">
+                    <div class="input-group input-group-sm">
+                        <input type="text" name="search" class="form-control" placeholder="Buscar usuario..." value="<?= htmlspecialchars($searchQuery) ?>">
+                        <button class="btn btn-outline-light" type="submit"><i class="bi bi-search"></i></button>
+                        <?php if ($searchQuery): ?>
+                            <a href="vpn_manage.php" class="btn btn-danger"><i class="bi bi-x"></i></a>
+                        <?php endif; ?>
+                    </div>
+                </form>
+            </div>
+            
             <div class="table-responsive">
                 <table class="table table-hover align-middle m-0">
                     <thead class="table-light">
@@ -94,7 +132,12 @@ include __DIR__ . '/../templates/header.php';
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($activeUsers as $user): ?>
+                        <?php if (empty($paginatedUsers)): ?>
+                        <tr>
+                            <td colspan="4" class="text-center py-4 text-muted">No se encontraron perfiles.</td>
+                        </tr>
+                        <?php else: ?>
+                        <?php foreach ($paginatedUsers as $user): ?>
                         <?php 
                             $s = $userSettings[$user] ?? ['is_active' => 1, 'time_start' => '', 'time_end' => '']; 
                             $statusColor = ($s['is_active'] == 1) ? 'success' : 'danger';
@@ -117,7 +160,6 @@ include __DIR__ . '/../templates/header.php';
                                     </button>
                                     <?php endif; ?>
                                     
-                                    <!-- Botón QR -->
                                     <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#qrModal<?= htmlspecialchars($user) ?>" title="Escanear con el celular">
                                         <i class="bi bi-qr-code"></i>
                                     </button>
@@ -155,7 +197,7 @@ include __DIR__ . '/../templates/header.php';
                             </div>
                         </div>
 
-                        <!-- Modal Unificado de Configuración -->
+                        <!-- Modal de Configuración -->
                         <?php if ($isAdmin): ?>
                         <div class="modal fade" id="configModal<?= htmlspecialchars($user) ?>" tabindex="-1">
                             <div class="modal-dialog">
@@ -204,9 +246,32 @@ include __DIR__ . '/../templates/header.php';
                         <?php endif; ?>
                         
                         <?php endforeach; ?>
+                        <?php endif; ?>
                     </tbody>
                 </table>
             </div>
+
+            <!-- CONTROLES DE PAGINACIÓN -->
+            <?php if ($totalPages > 1): ?>
+            <div class="card-footer bg-white pt-3">
+                <nav aria-label="Navegación de perfiles">
+                    <ul class="pagination pagination-sm justify-content-center m-0">
+                        <li class="page-item <?= ($page <= 1) ? 'disabled' : '' ?>">
+                            <a class="page-link" href="?page=<?= $page - 1 ?>&search=<?= urlencode($searchQuery) ?>">Anterior</a>
+                        </li>
+                        <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+                            <li class="page-item <?= ($page == $i) ? 'active' : '' ?>">
+                                <a class="page-link" href="?page=<?= $i ?>&search=<?= urlencode($searchQuery) ?>"><?= $i ?></a>
+                            </li>
+                        <?php endfor; ?>
+                        <li class="page-item <?= ($page >= $totalPages) ? 'disabled' : '' ?>">
+                            <a class="page-link" href="?page=<?= $page + 1 ?>&search=<?= urlencode($searchQuery) ?>">Siguiente</a>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+            <?php endif; ?>
+
         </div>
     </div>
 </div>
