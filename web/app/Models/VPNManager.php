@@ -41,12 +41,14 @@ class VPNManager {
         return $ips;
     }
 
-    public function setStaticIP($username, $ip) {
+    public function setStaticIP($username, $ip, $network = '', $netmask = '') {
         $cleanUsername = escapeshellarg(trim($username));
         $cleanIP = escapeshellarg(trim($ip));
-        $output = shell_exec("{$this->scriptPath} setip {$cleanUsername} {$cleanIP} 2>&1");
+        $cleanNet = escapeshellarg(trim($network ?: 'null'));
+        $cleanMask = escapeshellarg(trim($netmask ?: 'null'));
+        $output = shell_exec("{$this->scriptPath} setip {$cleanUsername} {$cleanIP} {$cleanNet} {$cleanMask} 2>&1");
         if (strpos($output, 'Error:') !== false) return ['status' => 'error', 'message' => $output];
-        return ['status' => 'success', 'message' => "IP $ip asignada correctamente a $username."];
+        return ['status' => 'success', 'message' => "IP $ip y rutas asignadas correctamente a $username."];
     }
 
     public function setAccess($username, $access) {
