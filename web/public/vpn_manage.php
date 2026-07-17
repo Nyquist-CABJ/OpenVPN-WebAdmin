@@ -17,18 +17,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $r = $vpn->revokeUser($targetUser); $message = $r['message']; $messageType = $r['status'] === 'success' ? 'success' : 'danger';
     } elseif ($action === 'save_config' && $isAdmin && !empty($targetUser)) {
         
-        // Guardamos IP si existe
+        $net = !empty($_POST['client_network']) ? trim($_POST['client_network']) : null;
+        $mask = !empty($_POST['client_netmask']) ? trim($_POST['client_netmask']) : '255.255.255.0';
+        
+        // Guardamos IP y rutas en el archivo CCD
         if (!empty($_POST['new_ip'])) {
-            $vpn->setStaticIP($targetUser, $_POST['new_ip']);
+            $vpn->setStaticIP($targetUser, $_POST['new_ip'], $net, $mask);
         }
         
-        // Guardamos los Ajustes de Acceso en BD
+        // Guardamos los Ajustes de Acceso y Red en BD
         $isActive = isset($_POST['is_active']) ? (int)$_POST['is_active'] : 1;
         $timeStart = !empty($_POST['time_start']) ? $_POST['time_start'] : null;
         $timeEnd = !empty($_POST['time_end']) ? $_POST['time_end'] : null;
         
-        $stmt = $pdo->prepare("INSERT INTO vpn_user_settings (username, is_active, time_start, time_end) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE is_active = ?, time_start = ?, time_end = ?");
-        $stmt->execute([$targetUser, $isActive, $timeStart, $timeEnd, $isActive, $timeStart, $timeEnd]);
+        $stmt = $pdo->prepare("INSERT INTO vpn_user_settings (username, is_active, time_start, time_end, client_network, client_netmask) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE is_active = ?, time_start = ?, time_end = ?, client_network = ?, client_netmask = ?");
+        $stmt->execute([$targetUser, $isActive, $timeStart, $timeEnd, $net, $mask, $isActive, $timeStart, $timeEnd, $net, $mask]);
         
         // Forzamos actualización del Bash inmediatamente al guardar
         $vpn->setAccess($targetUser, $isActive === 1 ? 'allow' : 'deny');
@@ -64,7 +67,7 @@ $limit = 10;
 $totalUsers = count($activeUsers);
 $totalPages = $totalUsers > 0 ? ceil($totalUsers / $limit) : 1;
 $page = isset($_GET['page']) && is_numeric($_GET['page']) ? (int)$_GET['page'] : 1;
-$page = max(1, min($page, $totalPages)); // Asegura que no sobrepase los límites
+$page = max(1, min($page, $totalPages));
 $offset = ($page - 1) * $limit;
 
 // Extraer solo los usuarios de la página actual
@@ -82,197 +85,213 @@ include __DIR__ . '/../templates/header.php';
 <h3 class="mb-4">Gestión de Perfiles OpenVPN</h3>
 <?php if ($message): ?><div class="alert alert-<?= $messageType ?> alert-dismissible"><button class="btn-close" data-bs-dismiss="alert"></button><?= htmlspecialchars($message) ?></div><?php endif; ?>
 
-<div class="row">
-    <?php if ($isAdmin): ?>
-    <!-- PANEL HORIZONTAL SUPERIOR -->
-    <div class="col-12 mb-4">
-        <div class="card shadow-sm border-primary">
-            <div class="card-header bg-primary text-white"><i class="bi bi-shield-plus"></i> Generar Certificado</div>
-            <div class="card-body">
-                <form method="POST" class="row gx-3 gy-2 align-items-center">
-                    <input type="hidden" name="action" value="create">
-                    <div class="col-sm-9">
-                        <input type="text" class="form-control" name="username" pattern="[a-zA-Z0-9_-]+" required placeholder="Nombre de usuario (Sin espacios)">
-                    </div>
-                    <div class="col-sm-3">
-                        <button type="submit" class="btn btn-success w-100"><i class="bi bi-plus-circle"></i> Crear Perfil</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-    <?php endif; ?>
-    
-    <!-- LISTA DE PERFILES INFERIOR -->
-    <div class="col-12">
-        <div class="card shadow-sm">
-            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-file-earmark-lock"></i> Perfiles (<?= $totalUsers ?>)</span>
-                
-                <!-- Buscador -->
-                <form method="GET" class="m-0 d-flex">
-                    <div class="input-group input-group-sm">
-                        <input type="text" name="search" class="form-control" placeholder="Buscar usuario..." value="<?= htmlspecialchars($searchQuery) ?>">
-                        <button class="btn btn-outline-light" type="submit"><i class="bi bi-search"></i></button>
-                        <?php if ($searchQuery): ?>
-                            <a href="vpn_manage.php" class="btn btn-danger"><i class="bi bi-x"></i></a>
-                        <?php endif; ?>
-                    </div>
-                </form>
-            </div>
-            
-            <div class="table-responsive">
-                <table class="table table-hover align-middle m-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th class="ps-3">Estado</th>
-                            <th>Usuario VPN</th>
-                            <th>IP Asignada (Local)</th>
-                            <th class="text-end pe-3">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (empty($paginatedUsers)): ?>
-                        <tr>
-                            <td colspan="4" class="text-center py-4 text-muted">No se encontraron perfiles.</td>
-                        </tr>
-                        <?php else: ?>
-                        <?php foreach ($paginatedUsers as $user): ?>
-                        <?php 
-                            $s = $userSettings[$user] ?? ['is_active' => 1, 'time_start' => '', 'time_end' => '']; 
-                            $statusColor = ($s['is_active'] == 1) ? 'success' : 'danger';
-                        ?>
-                        <tr>
-                            <td class="ps-3">
-                                <span class="badge bg-<?= $statusColor ?> rounded-circle p-2" title="<?= ($s['is_active'] == 1) ? 'Permitido' : 'Bloqueado' ?>"><span class="visually-hidden">Estado</span></span>
-                            </td>
-                            <td class="fw-bold text-primary"><?= htmlspecialchars($user) ?></td>
-                            <td>
-                                <span class="badge bg-light text-dark border px-2 py-1 fs-6">
-                                    <?= isset($userIPs[$user]) ? htmlspecialchars($userIPs[$user]) : 'Dinámica' ?>
-                                </span>
-                            </td>
-                            <td class="text-end pe-3">
-                                <div class="d-inline-flex gap-2">
-                                    <?php if ($isAdmin): ?>
-                                    <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#configModal<?= htmlspecialchars($user) ?>" title="Configuración de Red">
-                                        <i class="bi bi-gear"></i> Set
-                                    </button>
-                                    <?php endif; ?>
-                                    
-                                    <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#qrModal<?= htmlspecialchars($user) ?>" title="Escanear con el celular">
-                                        <i class="bi bi-qr-code"></i>
-                                    </button>
-                                    
-                                    <form method="POST" class="m-0">
-                                        <input type="hidden" name="action" value="download">
-                                        <input type="hidden" name="username" value="<?= htmlspecialchars($user) ?>">
-                                        <button class="btn btn-sm btn-outline-primary" title="Descargar .ovpn"><i class="bi bi-download"></i></button>
-                                    </form>
-                                    
-                                    <?php if ($isAdmin): ?>
-                                    <form method="POST" class="m-0" onsubmit="return confirm('¿Revocar certificado de <?= htmlspecialchars($user) ?>?');">
-                                        <input type="hidden" name="action" value="revoke">
-                                        <input type="hidden" name="username" value="<?= htmlspecialchars($user) ?>">
-                                        <button class="btn btn-sm btn-outline-danger" title="Revocar"><i class="bi bi-trash"></i></button>
-                                    </form>
-                                    <?php endif; ?>
-                                </div>
-                            </td>
-                        </tr>
-
-                        <!-- Modal de QR -->
-                        <div class="modal fade" id="qrModal<?= htmlspecialchars($user) ?>" tabindex="-1">
-                            <div class="modal-dialog modal-sm text-center">
-                                <div class="modal-content">
-                                    <div class="modal-header bg-light">
-                                        <h6 class="modal-title"><i class="bi bi-qr-code"></i> Escanear Perfil: <?= htmlspecialchars($user) ?></h6>
-                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                    </div>
-                                    <div class="modal-body">
-                                        <img src="generate_qr.php?user=<?= urlencode($user) ?>" class="img-fluid border p-2 mb-2" alt="Código QR de VPN">
-                                        <p class="small text-muted m-0">Abre <strong>OpenVPN Connect</strong> en tu celular y selecciona <em>"Import Profile > Scan QR Code"</em>.</p>
-                                    </div>
-                                </div>
+<div class="content-wrapper">
+    <div class="main-content">
+        <div class="row">
+            <?php if ($isAdmin): ?>
+            <!-- PANEL HORIZONTAL SUPERIOR -->
+            <div class="col-12 mb-4">
+                <div class="card shadow-sm border-primary">
+                    <div class="card-header bg-primary text-white"><i class="bi bi-shield-plus"></i> Generar Certificado</div>
+                    <div class="card-body">
+                        <form method="POST" class="row gx-3 gy-2 align-items-center">
+                            <input type="hidden" name="action" value="create">
+                            <div class="col-sm-9">
+                                <input type="text" class="form-control" name="username" pattern="[a-zA-Z0-9_-]+" required placeholder="Nombre de usuario (Sin espacios)">
                             </div>
-                        </div>
-
-                        <!-- Modal de Configuración -->
-                        <?php if ($isAdmin): ?>
-                        <div class="modal fade" id="configModal<?= htmlspecialchars($user) ?>" tabindex="-1">
-                            <div class="modal-dialog">
-                                <div class="modal-content">
-                                    <div class="modal-header bg-light">
-                                        <h6 class="modal-title"><i class="bi bi-gear"></i> Configuración: <?= htmlspecialchars($user) ?></h6>
-                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                    </div>
-                                    <form method="POST">
-                                        <div class="modal-body text-start">
-                                            <input type="hidden" name="action" value="save_config">
-                                            <input type="hidden" name="username" value="<?= htmlspecialchars($user) ?>">
-                                            
-                                            <div class="mb-3">
-                                                <label class="form-label small fw-bold">IP Asignada (Local)</label>
-                                                <input type="text" class="form-control" name="new_ip" value="<?= isset($userIPs[$user]) ? htmlspecialchars($userIPs[$user]) : '10.10.20.' ?>">
-                                            </div>
-                                            
-                                            <div class="mb-3">
-                                                <label class="form-label small fw-bold text-danger">Interruptor de Emergencia</label>
-                                                <select class="form-select border-danger" name="is_active">
-                                                    <option value="1">🟢 Permitir Acceso (Activo)</option>
-                                                    <option value="0" <?= ($s['is_active'] == 0) ? 'selected' : '' ?>>🔴 Bloquear Inmediatamente</option>
-                                                </select>
-                                            </div>
-
-                                            <div class="row">
-                                                <label class="form-label small fw-bold">Horario de Acceso Permitido (Vacíar para 24hs)</label>
-                                                <div class="col-6">
-                                                    <input type="time" class="form-control" name="time_start" value="<?= htmlspecialchars($s['time_start'] ?? '') ?>">
-                                                    <div class="form-text">Hora Inicio</div>
-                                                </div>
-                                                <div class="col-6">
-                                                    <input type="time" class="form-control" name="time_end" value="<?= htmlspecialchars($s['time_end'] ?? '') ?>">
-                                                    <div class="form-text">Hora Fin</div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="modal-footer p-2">
-                                            <button type="submit" class="btn btn-primary w-100">Guardar Cambios</button>
-                                        </div>
-                                    </form>
-                                </div>
+                            <div class="col-sm-3">
+                                <button type="submit" class="btn btn-success w-100"><i class="bi bi-plus-circle"></i> Crear Perfil</button>
                             </div>
-                        </div>
-                        <?php endif; ?>
-                        
-                        <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- CONTROLES DE PAGINACIÓN -->
-            <?php if ($totalPages > 1): ?>
-            <div class="card-footer bg-white pt-3">
-                <nav aria-label="Navegación de perfiles">
-                    <ul class="pagination pagination-sm justify-content-center m-0">
-                        <li class="page-item <?= ($page <= 1) ? 'disabled' : '' ?>">
-                            <a class="page-link" href="?page=<?= $page - 1 ?>&search=<?= urlencode($searchQuery) ?>">Anterior</a>
-                        </li>
-                        <?php for ($i = 1; $i <= $totalPages; $i++): ?>
-                            <li class="page-item <?= ($page == $i) ? 'active' : '' ?>">
-                                <a class="page-link" href="?page=<?= $i ?>&search=<?= urlencode($searchQuery) ?>"><?= $i ?></a>
-                            </li>
-                        <?php endfor; ?>
-                        <li class="page-item <?= ($page >= $totalPages) ? 'disabled' : '' ?>">
-                            <a class="page-link" href="?page=<?= $page + 1 ?>&search=<?= urlencode($searchQuery) ?>">Siguiente</a>
-                        </li>
-                    </ul>
-                </nav>
+                        </form>
+                    </div>
+                </div>
             </div>
             <?php endif; ?>
+            
+            <!-- LISTA DE PERFILES INFERIOR -->
+            <div class="col-12">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-file-earmark-lock"></i> Perfiles (<?= $totalUsers ?>)</span>
+                        
+                        <!-- Buscador -->
+                        <form method="GET" class="m-0 d-flex">
+                            <div class="input-group input-group-sm">
+                                <input type="text" name="search" class="form-control" placeholder="Buscar usuario..." value="<?= htmlspecialchars($searchQuery) ?>">
+                                <button class="btn btn-outline-light" type="submit"><i class="bi bi-search"></i></button>
+                                <?php if ($searchQuery): ?>
+                                    <a href="vpn_manage.php" class="btn btn-danger"><i class="bi bi-x"></i></a>
+                                <?php endif; ?>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle m-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="ps-3">Estado</th>
+                                    <th>Usuario VPN</th>
+                                    <th>IP Asignada (Local)</th>
+                                    <th class="text-end pe-3">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (empty($paginatedUsers)): ?>
+                                <tr>
+                                    <td colspan="4" class="text-center py-4 text-muted">No se encontraron perfiles.</td>
+                                </tr>
+                                <?php else: ?>
+                                <?php foreach ($paginatedUsers as $user): ?>
+                                <?php 
+                                    $s = $userSettings[$user] ?? ['is_active' => 1, 'time_start' => '', 'time_end' => '', 'client_network' => '', 'client_netmask' => '']; 
+                                    $statusColor = ($s['is_active'] == 1) ? 'success' : 'danger';
+                                ?>
+                                <tr>
+                                    <td class="ps-3">
+                                        <span class="badge bg-<?= $statusColor ?> rounded-circle p-2" title="<?= ($s['is_active'] == 1) ? 'Permitido' : 'Bloqueado' ?>"><span class="visually-hidden">Estado</span></span>
+                                    </td>
+                                    <td class="fw-bold text-primary"><?= htmlspecialchars($user) ?></td>
+                                    <td>
+                                        <span class="badge bg-light text-dark border px-2 py-1 fs-6">
+                                            <?= isset($userIPs[$user]) ? htmlspecialchars($userIPs[$user]) : 'Dinámica' ?>
+                                        </span>
+                                    </td>
+                                    <td class="text-end pe-3">
+                                        <div class="d-inline-flex gap-2">
+                                            <?php if ($isAdmin): ?>
+                                            <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#configModal<?= htmlspecialchars($user) ?>" title="Configuración de Red">
+                                                <i class="bi bi-gear"></i> Set
+                                            </button>
+                                            <?php endif; ?>
+                                            
+                                            <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#qrModal<?= htmlspecialchars($user) ?>" title="Escanear con el celular">
+                                                <i class="bi bi-qr-code"></i>
+                                            </button>
+                                            
+                                            <form method="POST" class="m-0">
+                                                <input type="hidden" name="action" value="download">
+                                                <input type="hidden" name="username" value="<?= htmlspecialchars($user) ?>">
+                                                <button class="btn btn-sm btn-outline-primary" title="Descargar .ovpn"><i class="bi bi-download"></i></button>
+                                            </form>
+                                            
+                                            <?php if ($isAdmin): ?>
+                                            <form method="POST" class="m-0" onsubmit="return confirm('¿Revocar certificado de <?= htmlspecialchars($user) ?>?');">
+                                                <input type="hidden" name="action" value="revoke">
+                                                <input type="hidden" name="username" value="<?= htmlspecialchars($user) ?>">
+                                                <button class="btn btn-sm btn-outline-danger" title="Revocar"><i class="bi bi-trash"></i></button>
+                                            </form>
+                                            <?php endif; ?>
+                                        </div>
+                                    </td>
+                                </tr>
 
+                                <!-- Modal de QR -->
+                                <div class="modal fade" id="qrModal<?= htmlspecialchars($user) ?>" tabindex="-1">
+                                    <div class="modal-dialog modal-sm text-center">
+                                        <div class="modal-content">
+                                            <div class="modal-header bg-light">
+                                                <h6 class="modal-title"><i class="bi bi-qr-code"></i> Escanear Perfil: <?= htmlspecialchars($user) ?></h6>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <img src="generate_qr.php?user=<?= urlencode($user) ?>" class="img-fluid border p-2 mb-2" alt="Código QR de VPN">
+                                                <p class="small text-muted m-0">Abre <strong>OpenVPN Connect</strong> en tu celular y selecciona <em>"Import Profile > Scan QR Code"</em>.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Modal de Configuración -->
+                                <?php if ($isAdmin): ?>
+                                <div class="modal fade" id="configModal<?= htmlspecialchars($user) ?>" tabindex="-1">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header bg-light">
+                                                <h6 class="modal-title"><i class="bi bi-gear"></i> Configuración: <?= htmlspecialchars($user) ?></h6>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                            </div>
+                                            <form method="POST">
+                                                <div class="modal-body text-start">
+                                                    <input type="hidden" name="action" value="save_config">
+                                                    <input type="hidden" name="username" value="<?= htmlspecialchars($user) ?>">
+                                                    
+                                                    <div class="mb-3">
+                                                        <label class="form-label small fw-bold">IP Asignada (Local)</label>
+                                                        <input type="text" class="form-control" name="new_ip" value="<?= isset($userIPs[$user]) ? htmlspecialchars($userIPs[$user]) : '10.10.20.' ?>">
+                                                    </div>
+                                                    
+                                                    <!-- Rutas Site-to-Site -->
+                                                    <div class="row mb-3 bg-light p-2 border rounded mx-0">
+                                                        <label class="form-label small fw-bold text-primary mb-2"><i class="bi bi-router"></i> Enrutamiento LAN (Site-to-Site)</label>
+                                                        <div class="col-7">
+                                                            <input type="text" class="form-control form-control-sm" name="client_network" value="<?= htmlspecialchars($s['client_network'] ?? '') ?>" placeholder="ej. 192.168.1.0">
+                                                            <div class="form-text" style="font-size: 0.7em;">Red Detrás del Cliente</div>
+                                                        </div>
+                                                        <div class="col-5">
+                                                            <input type="text" class="form-control form-control-sm" name="client_netmask" value="<?= htmlspecialchars($s['client_netmask'] ?? '255.255.255.0') ?>">
+                                                            <div class="form-text" style="font-size: 0.7em;">Máscara</div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="row mb-3">
+                                                        <label class="form-label small fw-bold">Horario de Acceso Permitido (Vacíar para 24hs)</label>
+                                                        <div class="col-6">
+                                                            <input type="time" class="form-control" name="time_start" value="<?= htmlspecialchars($s['time_start'] ?? '') ?>">
+                                                            <div class="form-text">Hora Inicio</div>
+                                                        </div>
+                                                        <div class="col-6">
+                                                            <input type="time" class="form-control" name="time_end" value="<?= htmlspecialchars($s['time_end'] ?? '') ?>">
+                                                            <div class="form-text">Hora Fin</div>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <div class="mb-2 border-top pt-3">
+                                                        <label class="form-label small fw-bold text-danger">Interruptor de Emergencia</label>
+                                                        <select class="form-select border-danger" name="is_active">
+                                                            <option value="1">🟢 Permitir Acceso (Activo)</option>
+                                                            <option value="0" <?= ($s['is_active'] == 0) ? 'selected' : '' ?>>🔴 Bloquear Inmediatamente</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div class="modal-footer p-2">
+                                                    <button type="submit" class="btn btn-primary w-100">Guardar Cambios</button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                                <?php endif; ?>
+                                
+                                <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- CONTROLES DE PAGINACIÓN -->
+                    <?php if ($totalPages > 1): ?>
+                    <div class="card-footer bg-white pt-3">
+                        <nav aria-label="Navegación de perfiles">
+                            <ul class="pagination pagination-sm justify-content-center m-0">
+                                <li class="page-item <?= ($page <= 1) ? 'disabled' : '' ?>">
+                                    <a class="page-link" href="?page=<?= $page - 1 ?>&search=<?= urlencode($searchQuery) ?>">Anterior</a>
+                                </li>
+                                <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+                                    <li class="page-item <?= ($page == $i) ? 'active' : '' ?>">
+                                        <a class="page-link" href="?page=<?= $i ?>&search=<?= urlencode($searchQuery) ?>"><?= $i ?></a>
+                                    </li>
+                                <?php endfor; ?>
+                                <li class="page-item <?= ($page >= $totalPages) ? 'disabled' : '' ?>">
+                                    <a class="page-link" href="?page=<?= $page + 1 ?>&search=<?= urlencode($searchQuery) ?>">Siguiente</a>
+                                </li>
+                            </ul>
+                        </nav>
+                    </div>
+                    <?php endif; ?>
+
+                </div>
+            </div>
         </div>
-    </div>
-</div>
-<?php include __DIR__ . '/../templates/footer.php'; ?>
+    </div> <!-- FIN MAIN CONTENT -->
+    <?php include __DIR__ . '/../templates/footer.php'; ?>
