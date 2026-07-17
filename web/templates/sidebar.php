@@ -1,6 +1,6 @@
 <?php $currentPage = basename($_SERVER['PHP_SELF']); ?>
 <div class="bg-dark text-white p-3 d-flex flex-column" style="width: 250px; min-height: 100vh;">
-    <h4 class="text-center mb-0 text-primary"><i class="bi bi-shield-lock"></i> DF Techno</h4>
+    <h4 class="text-center mb-0 text-primary"><i class="bi bi-shield-lock-fill"></i> DF Techno</h4>
     <p class="text-center text-muted small mt-1">VPN Manager</p>
     <hr>
     
