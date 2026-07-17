@@ -9,11 +9,15 @@ PROTOCOL="udp"
 NETWORK="10.10.20"
 DNS1="192.168.1.2"
 DNS2="192.168.1.4"
+SERVER_CONF="/etc/openvpn/server/server.conf"
+OVPN_SERVICE="openvpn-server@server"
 
-# Capturamos los argumentos que enviará PHP
+
 ACTION=$1
 CLIENT=$2
 PARAM3=$3
+PARAM4=$4
+PARAM5=$5
 
 mkdir -p $OUTPUT_BASE
 mkdir -p $CCD_DIR
@@ -120,8 +124,9 @@ list_users() {
 }
 
 show_ips() {
-    grep -H ifconfig-push $CCD_DIR/* 2>/dev/null | awk -F'/' '{print $NF}' | sed 's/:ifconfig-push/ /g'
+    grep -H "ifconfig-push" $CCD_DIR/* 2>/dev/null | awk -F'/' '{print $NF}' | sed 's/:ifconfig-push/ /g'
 }
+
 
 set_static_ip() {
     if [ -z "$CLIENT" ] || [ -z "$PARAM3" ]; then
@@ -129,15 +134,39 @@ set_static_ip() {
         exit 1
     fi
     NEW_IP=$PARAM3
+    NET_IP=$PARAM4
+    NET_MASK=$PARAM5
     FILE="$CCD_DIR/$CLIENT"
     
-    # Mantenemos otras reglas como 'disable' o rutas push si existen
     if [ -f "$FILE" ]; then
+        # Eliminamos líneas previas de red o IP para no duplicar
         sed -i '/^ifconfig-push/d' "$FILE"
+        sed -i '/^iroute/d' "$FILE"
+        sed -i '/^push "route/d' "$FILE"
     fi
+    
     echo "ifconfig-push $NEW_IP 255.255.255.0" >> "$FILE"
-    echo "Exito: IP $NEW_IP asignada a '$CLIENT'."
+    
+    # Si se especificó una red, inyectamos las rutas Site-to-Site
+    if [ -n "$NET_IP" ] && [ "$NET_IP" != "null" ]; then
+        if [ -z "$NET_MASK" ] || [ "$NET_MASK" == "null" ]; then NET_MASK="255.255.255.0"; fi
+        echo "iroute $NET_IP $NET_MASK" >> "$FILE"
+        echo "push \"route $NET_IP $NET_MASK\"" >> "$FILE"
+        
+        # --- AUTOMATIZACIÓN DE SERVER.CONF ---
+        if [ -f "$SERVER_CONF" ]; then
+            # Si la ruta no existe en el server.conf, la agregamos y reiniciamos
+            if ! grep -q "^route $NET_IP $NET_MASK" "$SERVER_CONF"; then
+                echo "route $NET_IP $NET_MASK" >> "$SERVER_CONF"
+                systemctl restart $OVPN_SERVICE
+            fi
+        fi
+    fi
+    
+    echo "Exito: IP y rutas asignadas a '$CLIENT'."
 }
+
+
 
 set_access() {
     if [ -z "$CLIENT" ] || [ -z "$PARAM3" ]; then exit 1; fi
@@ -148,7 +177,6 @@ set_access() {
     if [ "$ACCESS" == "deny" ]; then
         if ! grep -q "^disable" "$FILE"; then
             echo "disable" >> "$FILE"
-            # Expulsión usando el puerto de management
             exec 3<>/dev/tcp/127.0.0.1/7505 2>/dev/null
             if [ $? -eq 0 ]; then
                 echo "kill $CLIENT" >&3
@@ -162,10 +190,7 @@ set_access() {
 }
 
 get_profile() {
-    if [ -z "$CLIENT" ]; then
-        echo "Error: Debe especificar un nombre de usuario."
-        exit 1
-    fi
+    if [ -z "$CLIENT" ]; then exit 1; fi
     FILE="$OUTPUT_BASE/$CLIENT/$CLIENT.ovpn"
     if [ -f "$FILE" ]; then
         cat "$FILE"
