@@ -34,7 +34,7 @@ CREATE TABLE `connection_history` (
   `logged_at` timestamp NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   KEY `idx_username` (`username`)
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -49,6 +49,8 @@ CREATE TABLE `vpn_user_settings` (
   `is_active` tinyint(1) DEFAULT 1,
   `time_start` time DEFAULT NULL,
   `time_end` time DEFAULT NULL,
+  `client_network` varchar(15) DEFAULT NULL,
+  `client_netmask` varchar(15) DEFAULT '255.255.255.0',
   PRIMARY KEY (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -70,16 +72,10 @@ CREATE TABLE `web_users` (
   `vpn_ip` varchar(15) DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Insertar Usuario Admin por defecto
---
-INSERT INTO `web_users` (`username`, `password_hash`, `role`) 
-VALUES ('admin', '$2y$10$sIGT/.3Qdy0M.el26HWtdO5nPbTAbb1SW3.kkwrOrhD0PQ6RzZtqW', 'administrador');
-
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
 /*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
 /*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
@@ -87,3 +83,5 @@ VALUES ('admin', '$2y$10$sIGT/.3Qdy0M.el26HWtdO5nPbTAbb1SW3.kkwrOrhD0PQ6RzZtqW',
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+
+-- Dump completed on 2026-07-17 13:33:44
